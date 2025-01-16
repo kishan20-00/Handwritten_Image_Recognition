@@ -139,7 +139,7 @@ def main():
     st.title("Handwritten Text Recognition with Diagram Detection")
     st.write("Upload a handwritten image, segment it into words and diagrams, predict the text, and save the results to a PDF.")
 
-    model_path = "handwriting_model.h5"
+    model_path = "handwriting_model_2.h5"
     model = load_saved_model(model_path)
     alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ-' "
 

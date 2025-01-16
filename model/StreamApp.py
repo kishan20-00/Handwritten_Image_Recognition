@@ -39,7 +39,7 @@ def main():
     st.write("Upload an image of a handwritten word, and the app will predict the text.")
 
     # Load the saved model
-    model_path = "handwriting_model.h5"
+    model_path = "handwriting_model_2.h5"
     model = load_saved_model(model_path)
 
     # Define the alphabet used during training

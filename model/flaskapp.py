@@ -1,102 +1,43 @@
-from flask import Flask, request, jsonify, render_template, send_file
-import numpy as np
-import cv2 as cv
-import tensorflow as tf
-import joblib
 import os
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-
-# Load the trained model and label encoder
-model = tf.keras.models.load_model('recognition_model_2.h5')
-encoder = joblib.load('label_encoder_2.pkl')
+import cv2 as cv
+import matplotlib.pyplot as plt
+import numpy as np
+import joblib
+from tensorflow.keras.models import load_model
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Define the label map for character predictions
-label_map = {
-    0: 'A', 1: 'B', 2: 'C', 3: 'D', 4: 'E', 5: 'F', 6: 'G', 7: 'H', 8: 'I', 9: 'J',
-    10: 'K', 11: 'L', 12: 'M', 13: 'N', 14: 'O', 15: 'P', 16: 'Q', 17: 'R', 18: 'S', 19: 'T',
-    20: 'U', 21: 'V', 22: 'W', 23: 'X', 24: 'Y', 25: 'Z'
-}
+# Load the trained model and label encoder
+model = load_model('recognition_model_3.h5')
+le = joblib.load('label_encoder_3.pkl')
 
-def segment_words(image):
-    gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
-    _, thresh = cv.threshold(gray, 128, 255, cv.THRESH_BINARY_INV)
-    contours, _ = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-    word_images = []
-    for cnt in contours:
-        x, y, w, h = cv.boundingRect(cnt)
-        word_images.append(image[y:y+h, x:x+w])
-    return word_images
+def load_and_preprocess_image(image_path):
+    img = cv.imread(image_path, cv.IMREAD_GRAYSCALE).astype('float32')
+    img = cv.resize(img, (64, 64)) / 255.0
+    img = np.expand_dims(img, axis=0)  # Add batch dimension
+    img = np.expand_dims(img, axis=-1)  # Add channel dimension
+    return img
 
-
-def segment_letters(word_image):
-    # Convert to grayscale
-    gray = cv.cvtColor(word_image, cv.COLOR_BGR2GRAY)
-
-    # Apply threshold
-    _, thresh = cv.threshold(gray, 127, 255, cv.THRESH_BINARY_INV)
-
-    # Find contours
-    contours, _ = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-
-    letter_images = []
-    for cnt in contours:
-        x, y, w, h = cv.boundingRect(cnt)
-        letter_images.append(thresh[y:y+h, x:x+w])  # Use thresholded image (single channel)
-
-    return sorted(letter_images, key=lambda x: cv.boundingRect(x)[0])
-
-
-
-def predict_character(image):
-    if len(image.shape) == 3:
-        image = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
-
-    image = cv.resize(image, (28, 28))
-    image = image.astype('float32') / 255.0
-    image = np.expand_dims(image, axis=-1)  # Add channel dimension
-    image = image.reshape(1, 28*28)  # Flatten the image to match model input
-
-    prediction = model.predict(image)
-    predicted_class = np.argmax(prediction)
-    return label_map[predicted_class]
-
-
-
-def generate_pdf(text, output_path='output.pdf'):
-    c = canvas.Canvas(output_path, pagesize=letter)
-    width, height = letter
-    c.drawString(100, height - 100, text)
-    c.save()
-    return output_path
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
+@app.route('/predict', methods=['POST'])
+def predict():
     if 'image' not in request.files:
-        return 'No file part'
-    file = request.files['image']
-    if file.filename == '':
-        return 'No selected file'
+        return jsonify({'error': 'No image provided'}), 400
 
-    image = cv.imdecode(np.frombuffer(file.read(), np.uint8), cv.IMREAD_COLOR)
-    word_images = segment_words(image)
+    image_file = request.files['image']
+    image_path = 'temp_image.png'
+    image_file.save(image_path)
 
-    recognized_text = []
-    for word_image in word_images:
-        letter_images = segment_letters(word_image)
-        word = ''.join([predict_character(letter) for letter in letter_images])
-        recognized_text.append(word)
+    # Preprocess and predict
+    test_image = load_and_preprocess_image(image_path)
+    prediction = model.predict(test_image)
+    predicted_label_index = np.argmax(prediction)
+    predicted_label = le.inverse_transform([predicted_label_index])[0]
 
-    final_text = ' '.join(recognized_text)
-    pdf_path = generate_pdf(final_text)
+    # Remove the temporary image file
+    os.remove(image_path)
 
-    return send_file(pdf_path, as_attachment=True)
+    return jsonify({'predicted_label': predicted_label})
 
 if __name__ == '__main__':
     app.run(debug=True)
